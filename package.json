@@ -1,0 +1,28 @@
+{
+  "name": "samecity-video-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/server.js && node --check src/auth.js && node --check src/db.js && node --check src/domain.js && node --check public/app.js",
+    "format": "prettier --write src public test README.md package.json railway.json .github/workflows/test.yml"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "prettier": "3.6.2"
+  },
+  "packageManager": "pnpm@11.19.0"
+}
