@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#102c2a" />
+    <title>同城 · 运营与培训工作台</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <section id="login" class="login">
+      <div class="login-story">
+        <span class="eyebrow">SAMECITY / CREATOR OPERATIONS</span>
+        <h1>把同城生意，<br />做进每一条视频。</h1>
+        <p>
+          从客户沟通到内容交付，从实战培训到数据复盘。<br />让团队的每一步，都有据可循。
+        </p>
+        <div class="story-grid">
+          <span>01 / 客户与交付</span><span>02 / 内容与培训</span
+          ><span>03 / 数据与增长</span>
+        </div>
+      </div>
+      <form id="login-form" class="login-card">
+        <span class="brand-mark">同</span>
+        <h2>欢迎回到工作台</h2>
+        <p class="muted">登录团队共享空间，开始今天的运营。</p>
+        <label
+          >工作台密码<input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            minlength="12"
+            placeholder="输入管理员设置的密码" /></label
+        ><button class="primary" type="submit">进入工作台 →</button>
+        <p id="login-error" role="alert"></p>
+        <small>独立部署 · 数据存储于你的 PostgreSQL</small>
+      </form>
+    </section>
+    <div id="workspace" hidden>
+      <aside>
+        <a class="brand" href="/">同城<span>运营与培训工作台</span></a>
+        <div class="nav-label">WORKSPACE / 工作空间</div>
+        <nav id="nav"></nav>
+        <div class="sidebar-bottom">
+          <span class="connection-dot"></span>团队共享空间<button
+            id="logout"
+            class="quiet"
+          >
+            退出登录 ↗
+          </button>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <span
+            >工作空间 <span class="muted">/</span>
+            <span id="breadcrumb">运营总览</span></span
+          ><span class="header-date" id="today"></span>
+        </header>
+        <section id="content"></section>
+        <footer>同城 SAMECITY <span>让内容有方向，让运营有结果。</span></footer>
+      </main>
+    </div>
+    <dialog id="editor">
+      <form id="record-form">
+        <div class="dialog-head">
+          <div>
+            <span class="eyebrow">WORKBENCH / RECORD</span>
+            <h2 id="editor-title"></h2>
+          </div>
+          <button
+            type="button"
+            id="close-editor"
+            class="quiet"
+            aria-label="关闭"
+          >
+            ✕
+          </button>
+        </div>
+        <div id="form-fields" class="form-grid"></div>
+        <p id="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" id="delete-record" class="danger">
+            删除记录</button
+          ><button type="submit" class="primary">保存记录</button>
+        </div>
+        <div id="audit" class="muted"></div>
+      </form>
+    </dialog>
+    <dialog id="consent">
+      <h2>授权 MCP 客户端</h2>
+      <p id="consent-description"></p>
+      <p class="muted">
+        授权后，该客户端可访问团队共享空间中的数据。请确认这是你刚发起的连接。
+      </p>
+      <div class="dialog-actions">
+        <button id="deny-consent">拒绝</button
+        ><button id="allow-consent" class="primary">确认授权</button>
+      </div>
+      <p id="consent-error" role="alert"></p>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
