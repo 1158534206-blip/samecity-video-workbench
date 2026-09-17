@@ -10,7 +10,7 @@ const modules = {
   customers: ["客户管理", "◈", "CUSTOMERS"],
   tasks: ["任务协作", "☷", "TASKS"],
   communications: ["沟通记录", "◌", "COMMUNICATIONS"],
-  scripts: ["选题脚本", "▤", "CONTENT STUDIO"],
+  scripts: ["内容中心", "▤", "CONTENT CENTER"],
   assignments: ["培训作业", "▧", "TRAINING"],
   videos: ["视频数据", "▥", "VIDEO ANALYTICS"],
   reviews: ["运营复盘", "↗", "REVIEWS"],
@@ -20,6 +20,9 @@ const definitions = {
   customers: [
     ["city", "所在城市"],
     ["industry", "所属行业"],
+    ["products", "产品 / 服务", "textarea"],
+    ["target_customers", "目标顾客", "textarea"],
+    ["advantages", "优势", "textarea"],
     ["contact", "联系人"],
     ["phone", "联系电话"],
     ["account", "账号名称"],
@@ -39,6 +42,14 @@ const definitions = {
     ["next_step", "下一步行动", "textarea"],
   ],
   scripts: [
+    ["ownership", "内容归属", "select", "ownerships"],
+    ["content_type", "内容类型", "select", "content_types"],
+    ["content_goal", "内容目的", "select", "content_goals"],
+    ["format", "表现形式", "select", "formats"],
+    ["audience", "目标受众"],
+    ["need_shots", "需要拍摄镜头建议", "boolean"],
+    ["need_cta", "需要结尾引导", "boolean"],
+    ["batch_size", "一次生成数量", "number"],
     ["platform", "发布平台"],
     ["publish_date", "计划发布日期", "date"],
     ["hook", "开场钩子", "textarea"],
@@ -80,13 +91,14 @@ const descriptions = {
   customers: "沉淀客户需求，让每一次合作都有清晰目标。",
   tasks: "明确负责人和截止时间，推动每一项交付落地。",
   communications: "记录关键共识，持续推进下一步行动。",
-  scripts: "从同城选题到转化引导，把好内容变成可执行脚本。",
+  scripts: "按条件生成脚本，统一沉淀客户内容与内部内容。",
   assignments: "布置实战任务，提交作品，记录导师反馈。",
   videos: "记录发布表现，追踪从播放到成交的效果。",
   reviews: "总结有效做法，把经验沉淀为下一轮行动。",
 };
 let csrf = "",
   statuses = {},
+  enums = {},
   current = "dashboard",
   page = 1,
   filters = { q: "", status: "", customer_id: "" },
@@ -176,7 +188,9 @@ $("#logout").onclick = async () => {
 };
 async function boot() {
   csrf = (await api("/api/session")).csrf;
-  statuses = (await api("/api/meta")).statuses;
+  const meta = await api("/api/meta");
+  statuses = meta.statuses;
+  enums = meta.enums || {};
   $("#login").hidden = true;
   $("#workspace").hidden = false;
   await navigate("dashboard");
@@ -202,6 +216,8 @@ async function navigate(key, reset = true) {
       renderDashboard(data);
     } else if (key === "mcp") {
       renderMcp();
+    } else if (key === "scripts") {
+      await renderContentCenter(seq);
     } else {
       const params = new URLSearchParams({
         page,
@@ -483,9 +499,9 @@ function renderRecords(kind, data) {
 function field(name, label, type, value, options) {
   const l = el("label", type === "textarea" ? "wide" : "", label);
   let input;
-  if (options) {
+  if (type === "select") {
     input = el("select");
-    for (const o of options) input.append(option(o[0], o[1]));
+    for (const o of options || []) input.append(option(o[0], o[1]));
   } else if (type === "textarea") input = el("textarea");
   else {
     input = el("input");
@@ -500,12 +516,32 @@ function field(name, label, type, value, options) {
     input.maxLength = name === "title" ? 200 : type === "url" ? 2000 : 200;
   }
   input.name = name;
-  input.value = value ?? "";
+  input.value = type === "select" ? String(value ?? "") : (value ?? "");
   if (name === "title") input.required = true;
   l.append(input);
   return l;
 }
-async function openEditor(kind, id) {
+function resolveOptions(type, optKey) {
+  if (type === "priority") return ["普通", "紧急", "重要"].map((s) => [s, s]);
+  if (type === "boolean")
+    return [
+      ["false", "否"],
+      ["true", "是"],
+    ];
+  if (optKey && enums[optKey]) return enums[optKey].map((v) => [v, v]);
+  return null;
+}
+function fieldValue(r, preset, key, type, optKey) {
+  if (r?.data[key] !== undefined) return r.data[key];
+  if (preset[key] !== undefined) return preset[key];
+  if (type === "boolean") return false;
+  if (type === "number" || type === "money")
+    return key === "batch_size" ? 1 : 0;
+  if (optKey && enums[optKey]) return enums[optKey][0];
+  if (type === "priority") return "普通";
+  return "";
+}
+async function openEditor(kind, id, preset = {}) {
   try {
     customers = await allCustomers();
     const r = id ? await api("/api/record/" + id) : null;
@@ -537,18 +573,37 @@ async function openEditor(kind, id) {
           ...customers.map((c) => [c.id, c.title]),
         ]),
       );
-    for (const [key, label, type] of definitions[kind])
+    for (const [key, label, type, optKey] of definitions[kind]) {
+      const options = resolveOptions(type, optKey);
+      const isSelect = !!options || type === "select";
+      const inputType =
+        type === "textarea" ? "textarea" : isSelect ? "select" : type;
       f.append(
         field(
           key,
           label,
-          type === "priority" ? "select" : type,
-          r?.data[key] ?? (type === "number" || type === "money" ? 0 : ""),
-          type === "priority"
-            ? ["普通", "紧急", "重要"].map((s) => [s, s])
-            : null,
+          inputType,
+          fieldValue(r, preset, key, type, optKey),
+          options,
         ),
       );
+    }
+    if (kind === "scripts") {
+      const ownership = f.querySelector('[name="ownership"]');
+      const customer = f.querySelector('[name="customer_id"]');
+      const sync = () => {
+        const linked = ownership.value === "客户内容";
+        customer.required = linked;
+        customer.disabled = !linked;
+        if (!linked) customer.value = "";
+      };
+      ownership.onchange = sync;
+      sync();
+      const batch = f.querySelector('[name="batch_size"]');
+      batch.min = 1;
+      batch.max = 100;
+      batch.required = true;
+    }
     $("#delete-record").hidden = !r;
     $("#editor").showModal();
     if (r) {
@@ -576,12 +631,13 @@ $("#record-form").onsubmit = async (e) => {
   try {
     const values = Object.fromEntries(new FormData(e.target)),
       data = {};
-    for (const [key, , type] of definitions[editing.kind])
-      data[key] = ["number", "money", "score"].includes(type)
-        ? values[key] === "" && type === "score"
-          ? null
-          : Number(values[key])
-        : values[key];
+    for (const [key, , type] of definitions[editing.kind]) {
+      if (type === "boolean") data[key] = values[key] === "true";
+      else if (["number", "money", "score"].includes(type))
+        data[key] =
+          values[key] === "" && type === "score" ? null : Number(values[key]);
+      else data[key] = values[key];
+    }
     const body = {
       title: values.title,
       status: values.status,
@@ -674,6 +730,420 @@ async function exportRecords(kind) {
   } catch (e) {
     toast(e.message);
   }
+}
+let contentCenter = null;
+let contentConditions = {};
+let generatedBatch = null;
+function selectInput(name, options, value) {
+  const s = el("select");
+  s.name = name;
+  for (const o of options) s.append(option(o[0], o[1]));
+  s.value = value ?? "";
+  return s;
+}
+function textInput(name, value, type = "text", attrs = {}) {
+  const i = el("input");
+  i.name = name;
+  i.type = type;
+  i.value = value ?? "";
+  for (const [k, v] of Object.entries(attrs)) i[k] = v;
+  return i;
+}
+function labeled(labelText, input) {
+  const l = el("label", "", labelText);
+  l.append(input);
+  return l;
+}
+function buildContentForm() {
+  const section = el("section", "panel conditions");
+  const head = el("div", "panel-heading");
+  head.append(
+    el("h3", "", "文案生成条件"),
+    el("span", "", "根据资料生成模板草稿，发布前请核实和完善"),
+  );
+  section.append(head);
+  const grid = el("div", "condition-grid");
+
+  const ownership = selectInput(
+    "ownership",
+    enums.ownerships.map((v) => [v, v]),
+    "客户内容",
+  );
+  const customer = selectInput("customer_id", [], "");
+  const customerLabel = labeled("关联客户", customer);
+  const contentType = selectInput(
+    "content_type",
+    enums.content_types.map((v) => [v, v]),
+    "同城流量",
+  );
+  const contentGoal = selectInput(
+    "content_goal",
+    enums.content_goals.map((v) => [v, v]),
+    "曝光",
+  );
+  const format = selectInput(
+    "format",
+    enums.formats.map((v) => [v, v]),
+    "口播",
+  );
+  const audience = textInput("audience", "");
+  const needShots = selectInput(
+    "need_shots",
+    [
+      ["false", "否"],
+      ["true", "是"],
+    ],
+    "false",
+  );
+  const needCta = selectInput(
+    "need_cta",
+    [
+      ["false", "否"],
+      ["true", "是"],
+    ],
+    "false",
+  );
+  const batchSize = textInput("batch_size", "1", "number", {
+    min: 1,
+    max: 100,
+    step: 1,
+  });
+
+  grid.append(
+    labeled("内容归属", ownership),
+    customerLabel,
+    labeled("内容类型", contentType),
+    labeled("内容目的", contentGoal),
+    labeled("表现形式", format),
+    labeled("目标受众", audience),
+    labeled("需要拍摄镜头建议", needShots),
+    labeled("需要结尾引导", needCta),
+    labeled("一次生成数量", batchSize),
+  );
+  section.append(grid);
+
+  const actions = el("div", "condition-actions");
+  actions.append(
+    button("生成文案", () => generateContent(), "primary"),
+    button("根据已勾选条件，再生成一批", () => generateContent()),
+  );
+  section.append(actions);
+
+  function syncCustomer() {
+    const isCustomer = ownership.value === "客户内容";
+    customerLabel.hidden = !isCustomer;
+    customer.required = isCustomer;
+  }
+  const inputs = [
+    ownership,
+    customer,
+    contentType,
+    contentGoal,
+    format,
+    audience,
+    needShots,
+    needCta,
+    batchSize,
+  ];
+  for (const input of inputs) {
+    if (contentConditions[input.name] !== undefined)
+      input.value = contentConditions[input.name];
+    input.addEventListener("change", () => {
+      contentConditions[input.name] = input.value;
+    });
+    input.addEventListener("input", () => {
+      contentConditions[input.name] = input.value;
+    });
+  }
+  ownership.onchange = syncCustomer;
+  syncCustomer();
+
+  return {
+    section,
+    ownership,
+    customer,
+    customerLabel,
+    contentType,
+    contentGoal,
+    format,
+    audience,
+    needShots,
+    needCta,
+    batchSize,
+    syncCustomer,
+  };
+}
+function populateCustomerSelect(select, list) {
+  select.replaceChildren(
+    option("", "请选择客户"),
+    ...list.map((c) => option(c.id, c.title)),
+  );
+}
+function library(title, ownership) {
+  const panelEl = el("section", "panel library");
+  const head = el("div", "panel-heading");
+  head.append(el("h3", "", title));
+  head.append(
+    button("＋ 新建", () => openEditor("scripts", null, { ownership })),
+  );
+  panelEl.append(head);
+  const body = el("div", "library-body");
+  panelEl.append(body);
+  return { panel: panelEl, body };
+}
+async function allScripts() {
+  const all = [];
+  let p = 1;
+  for (;;) {
+    const r = await api("/api/records/scripts?limit=100&page=" + p++);
+    all.push(...r.items);
+    if (all.length >= r.total || !r.items.length) return all;
+  }
+}
+function renderLibraryList(lib, items) {
+  const body = lib.body;
+  body.replaceChildren();
+  if (!items.length) {
+    const empty = el("div", "empty");
+    empty.append(
+      el("strong", "", "暂无内容"),
+      el("p", "", "生成后保存，或点击上方“＋ 新建”手动录入。"),
+    );
+    body.append(empty);
+    return;
+  }
+  const table = el("table"),
+    thead = el("thead"),
+    tr = el("tr");
+  for (const h of ["标题", "内容类型 / 目的", "平台 / 状态", "更新时间"])
+    tr.append(el("th", "", h));
+  thead.append(tr);
+  table.append(thead);
+  const tbody = el("tbody");
+  for (const r of items) {
+    const row = el("tr"),
+      title = el("td", "title-cell");
+    title.append(
+      button(r.title, () => openEditor("scripts", r.id), "open-record"),
+    );
+    if (r.customer_name) title.append(el("small", "muted", r.customer_name));
+    row.append(
+      title,
+      el(
+        "td",
+        "",
+        [r.data.content_type, r.data.content_goal]
+          .filter(Boolean)
+          .join(" / ") || "—",
+      ),
+      el(
+        "td",
+        "",
+        [r.data.platform, r.status].filter(Boolean).join(" / ") || "—",
+      ),
+      el("td", "", dateText(r.updated_at)),
+    );
+    tbody.append(row);
+  }
+  table.append(tbody);
+  body.append(table);
+}
+async function refreshLibraries(clientLib, internalLib) {
+  const scripts = await allScripts();
+  renderLibraryList(
+    clientLib,
+    scripts.filter((s) => (s.data.ownership || "客户内容") === "客户内容"),
+  );
+  renderLibraryList(
+    internalLib,
+    scripts.filter((s) => s.data.ownership === "我的内容"),
+  );
+}
+async function renderContentCenter(seq) {
+  const c = $("#content");
+  c.replaceChildren(
+    heading("内容中心", descriptions.scripts, modules.scripts[2]),
+  );
+  const form = buildContentForm();
+  const results = el("section", "panel results");
+  const resultsHead = el("div", "panel-heading");
+  resultsHead.append(
+    el("h3", "", "生成结果"),
+    el("span", "", "按条件生成的脚本草稿"),
+  );
+  results.append(resultsHead);
+  const resultsBody = el("div", "results-body");
+  resultsBody.append(
+    el("p", "muted", "尚未生成，请先在上方勾选条件并点击“生成文案”。"),
+  );
+  results.append(resultsBody);
+  const libs = el("div", "library-grid");
+  const clientLib = library("客户内容库", "客户内容");
+  const internalLib = library("我的内部内容库", "我的内容");
+  libs.append(clientLib.panel, internalLib.panel);
+  c.append(form.section, results, libs);
+  contentCenter = { ...form, resultsBody, clientLib, internalLib };
+  customers = await allCustomers();
+  if (seq !== viewSequence) return;
+  populateCustomerSelect(form.customer, customers);
+  form.customer.value = contentConditions.customer_id || "";
+  if (generatedBatch)
+    renderResults(generatedBatch.items, generatedBatch.customerId);
+  await refreshLibraries(clientLib, internalLib);
+}
+async function generateContent() {
+  const f = contentCenter;
+  if (f.busy) return;
+  if (!f.customer.reportValidity() || !f.batchSize.reportValidity()) return;
+  if (!f.batchSize.value) {
+    toast("请输入一次生成数量（1–100）");
+    return;
+  }
+  const body = {
+    ownership: f.ownership.value,
+    customer_id:
+      f.ownership.value === "客户内容" ? f.customer.value || null : null,
+    content_type: f.contentType.value,
+    content_goal: f.contentGoal.value,
+    format: f.format.value,
+    audience: f.audience.value,
+    need_shots: f.needShots.value === "true",
+    need_cta: f.needCta.value === "true",
+    batch_size: Number(f.batchSize.value),
+  };
+  try {
+    f.busy = true;
+    for (const b of f.section.querySelectorAll("button")) b.disabled = true;
+    const data = await api("/api/generate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    generatedBatch = { items: data.items, customerId: body.customer_id };
+    if (f === contentCenter && current === "scripts")
+      renderResults(data.items, body.customer_id);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    f.busy = false;
+    for (const b of f.section.querySelectorAll("button")) b.disabled = false;
+  }
+}
+function renderResults(items, customerId) {
+  const body = contentCenter.resultsBody;
+  body.replaceChildren();
+  if (!items.length) {
+    body.append(el("p", "muted", "暂无生成结果。"));
+    return;
+  }
+  for (const item of items) {
+    const card = el("article", "result-card");
+    card.append(el("h3", "", item.title));
+    const meta = el("div", "result-meta");
+    meta.append(
+      el("span", "pill", item.content_type),
+      el("span", "pill", item.content_goal),
+      el("span", "pill", item.format),
+    );
+    if (item.audience) meta.append(el("span", "pill", item.audience));
+    card.append(meta);
+    card.append(el("p", "result-hook", item.hook));
+    card.append(el("p", "result-body", item.body));
+    if (item.shots) {
+      card.append(el("h4", "", "拍摄建议"));
+      card.append(el("p", "muted", item.shots));
+    }
+    if (item.call_to_action) {
+      card.append(el("h4", "", "结尾引导"));
+      card.append(el("p", "muted", item.call_to_action));
+    }
+    const actions = el("div", "result-actions");
+    const saveLabel =
+      item.ownership === "客户内容"
+        ? "保存到客户内容库"
+        : "保存到我的内部内容库";
+    const action = (label, key, fn, className = "") => {
+      const b = button(
+        item[key] ? "已完成" : label,
+        async () => {
+          b.disabled = true;
+          try {
+            await fn(item, customerId);
+            item[key] = true;
+            b.textContent = "已完成";
+          } catch (e) {
+            toast(e.message);
+            b.disabled = false;
+          }
+        },
+        className,
+      );
+      b.disabled = !!item[key];
+      return b;
+    };
+    actions.append(
+      action(saveLabel, "saved", saveGenerated, "primary"),
+      action("加入拍摄计划", "planned", addToPlan),
+    );
+    card.append(actions);
+    body.append(card);
+  }
+}
+async function saveGenerated(item, customerId) {
+  const payload = {
+    title: item.title,
+    status: "选题中",
+    customer_id: item.ownership === "客户内容" ? customerId || null : null,
+    data: {
+      platform: item.platform || "",
+      hook: item.hook || "",
+      body: item.body || "",
+      shots: item.shots || "",
+      call_to_action: item.call_to_action || "",
+      publish_date: item.publish_date || "",
+      ownership: item.ownership,
+      content_type: item.content_type,
+      content_goal: item.content_goal,
+      format: item.format,
+      audience: item.audience || "",
+      need_shots: item.need_shots,
+      need_cta: item.need_cta,
+      batch_size: item.batch_size || 1,
+    },
+  };
+  await api("/api/records/scripts", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  toast(
+    "已保存到" +
+      (item.ownership === "客户内容" ? "客户内容库" : "我的内部内容库"),
+  );
+  await refreshLibraries(contentCenter.clientLib, contentCenter.internalLib);
+}
+async function addToPlan(item, customerId) {
+  const description = [
+    "内容类型：" + item.content_type,
+    "内容目的：" + item.content_goal,
+    "表现形式：" + item.format,
+    item.audience ? "目标受众：" + item.audience : "",
+    "开场钩子：" + item.hook,
+    "口播正文：" + item.body,
+    item.shots ? "拍摄建议：" + item.shots : "",
+    item.call_to_action ? "结尾引导：" + item.call_to_action : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const payload = {
+    title: "拍摄：" + item.title,
+    status: "待开始",
+    customer_id: item.ownership === "客户内容" ? customerId || null : null,
+    data: { owner: "", due_date: "", priority: "普通", description },
+  };
+  await api("/api/records/tasks", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  toast("已加入拍摄计划（任务协作）");
 }
 function renderMcp() {
   const c = $("#content");

@@ -747,3 +747,89 @@ dialog::backdrop {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.condition-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding: 22px 24px;
+}
+.condition-actions {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px 22px;
+}
+.results-body {
+  padding: 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+.result-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: #fbfcf8;
+}
+.result-card h3 {
+  margin: 0 0 10px;
+}
+.result-card h4 {
+  font-size: 13px;
+  margin: 16px 0 6px;
+}
+.result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.result-hook {
+  font-weight: 600;
+  color: #23594a;
+}
+.result-body {
+  white-space: pre-line;
+  color: #42544d;
+}
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.library-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin-top: 22px;
+}
+.library-body {
+  overflow: auto;
+}
+.library-body .empty {
+  padding: 42px 20px;
+}
+@media (max-width: 1050px) {
+  .condition-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .library-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .condition-grid {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+  .condition-actions {
+    flex-direction: column;
+    padding: 0 18px 18px;
+  }
+  .results-body {
+    padding: 16px;
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
