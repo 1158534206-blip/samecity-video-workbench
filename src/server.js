@@ -7,7 +7,18 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { database, migration, repository } from "./db.js";
 import { installAuth } from "./auth.js";
-import { kinds, recordSchema, querySchema, statuses } from "./domain.js";
+import {
+  kinds,
+  recordSchema,
+  querySchema,
+  statuses,
+  generationSchema,
+  ownerships,
+  contentTypes,
+  contentGoals,
+  formats,
+} from "./domain.js";
+import { generateScripts } from "./generator.js";
 export function configuration(env = process.env) {
   const baseUrl = (env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
   const parsed = new URL(baseUrl);
@@ -69,7 +80,18 @@ export function createApp(db, config) {
     }
   });
   const auth = installAuth(app, db, config);
-  app.get("/api/meta", (req, res) => res.json({ kinds, statuses }));
+  app.get("/api/meta", (req, res) =>
+    res.json({
+      kinds,
+      statuses,
+      enums: {
+        ownerships,
+        content_types: contentTypes,
+        content_goals: contentGoals,
+        formats,
+      },
+    }),
+  );
   app.get("/api/dashboard", async (req, res) =>
     res.json(await repo.dashboard()),
   );
@@ -82,6 +104,14 @@ export function createApp(db, config) {
   app.get("/api/record/:id/audit", async (req, res) =>
     res.json(await repo.audit(z.string().uuid().parse(req.params.id))),
   );
+  app.post("/api/generate", async (req, res) => {
+    const cond = generationSchema.parse(req.body);
+    const context =
+      cond.ownership === "客户内容" && cond.customer_id
+        ? await repo.generationContext(cond.customer_id)
+        : null;
+    res.json({ items: generateScripts(context, cond) });
+  });
   app.post("/api/records/:kind", async (req, res) =>
     res.status(201).json(await repo.save(req.params.kind, req.body)),
   );

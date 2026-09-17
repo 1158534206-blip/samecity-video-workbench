@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS records (
  status TEXT NOT NULL, data JSONB NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+UPDATE records SET data = jsonb_build_object(
+ 'ownership', CASE WHEN customer_id IS NULL THEN '我的内容' ELSE '客户内容' END,
+ 'content_type','同城流量','content_goal','曝光','format','口播','audience','',
+ 'need_shots',false,'need_cta',false,'batch_size',1) || data
+ WHERE kind='scripts' AND NOT (data ? 'ownership');
 CREATE INDEX IF NOT EXISTS records_kind_updated ON records(kind,updated_at DESC);
 CREATE INDEX IF NOT EXISTS records_customer ON records(customer_id);
 CREATE TABLE IF NOT EXISTS audit_log(id BIGSERIAL PRIMARY KEY, record_id UUID, action TEXT NOT NULL, actor TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW());
@@ -164,6 +169,40 @@ export function repository(db) {
           [id],
         )
       ).rows;
+    },
+    async generationContext(customerId) {
+      const customer = await db.query(
+        "SELECT * FROM records WHERE id=$1 AND kind='customers'",
+        [customerId],
+      );
+      if (!customer.rows[0])
+        throw Object.assign(new Error("关联客户不存在"), { status: 400 });
+      const history = await db.query(
+        "SELECT title,data->>'hook' AS hook,data->>'body' AS body FROM records WHERE kind='scripts' AND customer_id=$1 ORDER BY updated_at DESC LIMIT 10",
+        [customerId],
+      );
+      const reviews = await db.query(
+        "SELECT title,data->>'highlights' AS highlights,data->>'problems' AS problems,data->>'actions' AS actions FROM records WHERE kind='reviews' AND customer_id=$1 ORDER BY updated_at DESC LIMIT 10",
+        [customerId],
+      );
+      return {
+        customer: customer.rows[0],
+        history: history.rows
+          .map((r) =>
+            [r.title, r.hook, r.body?.split("创作参考（")[0]]
+              .filter(Boolean)
+              .join("；"),
+          )
+          .filter(Boolean),
+        reviews: reviews.rows
+          .map(
+            (r) =>
+              [r.highlights, r.problems, r.actions]
+                .filter(Boolean)
+                .join("；") || r.title,
+          )
+          .filter(Boolean),
+      };
     },
   };
 }
